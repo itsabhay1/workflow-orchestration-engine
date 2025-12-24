@@ -1,0 +1,15 @@
+{
+  "name": "string",
+  "description": "string",
+  "steps": [
+    {
+      "id": "string",
+      "tool": "string",
+      "image": "string",
+      "command": ["string"],
+      "depends_on": [],
+      "retry": 1,
+      "timeout": 30
+    }
+  ]
+}

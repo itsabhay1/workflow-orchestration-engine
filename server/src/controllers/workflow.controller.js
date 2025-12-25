@@ -1,6 +1,7 @@
 import { saveWorkflow, getAllWorkflows } from '../store/workflow.store.js';
 import { randomUUID } from 'crypto';
 import { validateWorkflow } from '../validators/workflow.validator.js';
+import { createWorkflowRun } from '../store/workflowRun.store.js';
 
 export function createWorkflow(req, res) {
   try {
@@ -39,8 +40,23 @@ export function listWorkflows(req, res) {
 export function runWorkflow(req, res) {
   const { id } = req.params;
 
-  res.json({
-    message: 'Workflow run requested',
-    workflowId: id
+  //  Check if workflow exists
+  const workflows = getAllWorkflows();
+  const workflowExists = workflows.find(wf => wf.id === id);
+
+  if (!workflowExists) {
+    return res.status(404).json({
+      error: 'Workflow not found'
+    });
+  }
+
+  //  Create a workflow run
+  const run = createWorkflowRun(id);
+
+  //  Return run info
+  res.status(201).json({
+    message: 'Workflow run created',
+    run
   });
 }
+

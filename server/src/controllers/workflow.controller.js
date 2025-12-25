@@ -2,6 +2,7 @@ import { saveWorkflow, getAllWorkflows } from '../store/workflow.store.js';
 import { randomUUID } from 'crypto';
 import { validateWorkflow } from '../validators/workflow.validator.js';
 import { createWorkflowRun } from '../store/workflowRun.store.js';
+import { createStepRun } from '../store/stepRun.store.js';
 
 export function createWorkflow(req, res) {
   try {
@@ -42,9 +43,9 @@ export function runWorkflow(req, res) {
 
   //  Check if workflow exists
   const workflows = getAllWorkflows();
-  const workflowExists = workflows.find(wf => wf.id === id);
+  const workflow = workflows.find(wf => wf.id === id);
 
-  if (!workflowExists) {
+  if (!workflow) {
     return res.status(404).json({
       error: 'Workflow not found'
     });
@@ -53,10 +54,16 @@ export function runWorkflow(req, res) {
   //  Create a workflow run
   const run = createWorkflowRun(id);
 
+  // Create step runs (one per step)
+  const stepRuns = workflow.steps.map(step =>
+    createStepRun(run.runId, step.id)
+  );
+
   //  Return run info
   res.status(201).json({
     message: 'Workflow run created',
-    run
+    run,
+    stepRuns
   });
 }
 

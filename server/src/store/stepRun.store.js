@@ -41,3 +41,19 @@ export function completeStepRun(runId, stepId) {
 
   return stepRun;
 }
+
+
+export function failStepRun(runId, stepId, errorMessage) {
+  const stepRun = Array.from(stepRuns.values()).find(
+    sr => sr.runId === runId && sr.stepId === stepId
+  );
+
+  if (!stepRun) {
+    throw new Error('Step run not found');
+  }
+
+  stepRun.attempts += 1;
+  stepRun.error = errorMessage;
+
+  return stepRun;
+}

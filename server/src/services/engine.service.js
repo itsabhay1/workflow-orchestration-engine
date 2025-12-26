@@ -1,6 +1,7 @@
 import { getRunnableSteps } from './scheduler.service.js';
-import { completeStepRun } from '../store/stepRun.store.js';
-import { getAllWorkflowRuns } from '../store/workflowRun.store.js';
+import { completeStepRun, getStepRunsByRunId, failStepRun } from '../store/stepRun.store.js';
+import { getAllWorkflowRuns, completeWorkflowRun } from '../store/workflowRun.store.js';
+import { getAllWorkflows } from '../store/workflow.store.js';
 
 export function tick(runId) {
   const runs = getAllWorkflowRuns();
@@ -13,14 +14,61 @@ export function tick(runId) {
   const runnableSteps = getRunnableSteps(run.runId, run.workflowId);
 
   for (const stepRun of runnableSteps) {
-    // Mark step as RUNNING
+    // mark RUNNING
     stepRun.status = 'RUNNING';
     stepRun.startedAt = new Date().toISOString();
 
-    // Simulate execution
-    // (Later this becomes Docker / MCP)
-    completeStepRun(run.runId, stepRun.stepId);
+    // simulate success/failure
+    const shouldFail = Math.random() < 0.3;
+
+    if (shouldFail) {
+      // register failure
+      const failed = failStepRun(
+        run.runId,
+        stepRun.stepId,
+        'Simulated execution error'
+      );
+
+      // get retry limit from workflow definition
+      const workflows = getAllWorkflows();
+      const workflow = workflows.find(wf => wf.id === run.workflowId);
+      const stepDef = workflow.steps.find(s => s.id === stepRun.stepId);
+
+      if (failed.attempts <= stepDef.retry) {
+        // retry allowed
+        failed.status = 'PENDING';
+      } else {
+        // retry exhausted
+        failed.status = 'FAILED';
+      }
+    } else {
+      // success path
+      completeStepRun(run.runId, stepRun.stepId);
+    }
   }
 
-  return runnableSteps.length;
+
+  // check if workflow completed
+  // check step states
+  const stepRuns = getStepRunsByRunId(run.runId);
+
+  // if failed
+  const hasFailed = stepRuns.some(
+    sr => sr.status === 'FAILED'
+  );
+
+  if (hasFailed) {
+    run.status = 'FAILED';
+    run.finishedAt = new Date().toISOString();
+    return runnableSteps.length;
+  }
+
+  // check completion
+  const allCompleted = stepRuns.every(
+    sr => sr.status === 'COMPLETED'
+  );
+
+  if (allCompleted) {
+    completeWorkflowRun(run.runId);
+  }
 }

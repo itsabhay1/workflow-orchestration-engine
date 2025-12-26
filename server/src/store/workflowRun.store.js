@@ -26,3 +26,17 @@ export function getWorkflowRun(runId) {
 export function getAllWorkflowRuns() {
     return Array.from(workflowRuns.values());
 }
+
+// Mark workflow run completed
+export function completeWorkflowRun(runId) {
+  const run = workflowRuns.get(runId);
+
+  if (!run) {
+    throw new Error('Workflow run not found');
+  }
+
+  run.status = 'COMPLETED';
+  run.finishedAt = new Date().toISOString();
+
+  return run;
+}

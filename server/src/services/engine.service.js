@@ -12,69 +12,69 @@ export async function tick(runId) {
     throw new Error('Workflow run not found');
   }
 
-  const runnableSteps = getRunnableSteps(run.runId, run.workflowId);
+  if (run.isTicking) {
+    return 0;
+  }
 
-  for (const stepRun of runnableSteps) {
-    // mark RUNNING
-    stepRun.status = 'RUNNING';
-    stepRun.startedAt = new Date().toISOString();
+  run.isTicking = true;
 
-    // get step definition
-    const workflows = getAllWorkflows();
-    const workflow = workflows.find(wf => wf.id === run.workflowId);
-    const stepDef = workflow.steps.find(s => s.id === stepRun.stepId);
+  try {
+    const runnableSteps = getRunnableSteps(run.runId, run.workflowId);
 
-    try {
-      await runContainer({
-        image: stepDef.image,
-        command: stepDef.command,
-        timeout: stepDef.timeout
-      });
+    for (const stepRun of runnableSteps) {
+      stepRun.status = 'RUNNING';
+      stepRun.startedAt = new Date().toISOString();
 
-      // success
-      completeStepRun(run.runId, stepRun.stepId);
+      // get step definition
+      const workflows = getAllWorkflows();
+      const workflow = workflows.find(wf => wf.id === run.workflowId);
+      const stepDef = workflow.steps.find(s => s.id === stepRun.stepId);
 
-    } catch (err) {
-      // failure
-      const failed = failStepRun(
-        run.runId,
-        stepRun.stepId,
-        err.message
-      );
+      try {
+        await runContainer({
+          image: stepDef.image,
+          command: stepDef.command,
+          timeout: stepDef.timeout
+        });
 
-      if (failed.attempts <= stepDef.retry) {
-        failed.status = 'PENDING'; // retry
-        failed.startedAt = null;
-        failed.finishedAt = null;
-      } else {
-        failed.status = 'FAILED'; // exhausted
+        // success
+        completeStepRun(run.runId, stepRun.stepId);
+
+      } catch (err) {
+        const failed = failStepRun(
+          run.runId,
+          stepRun.stepId,
+          err.message
+        );
+
+        if (failed.attempts <= stepDef.retry) {
+          failed.status = 'PENDING';
+          failed.startedAt = null;
+          failed.finishedAt = null;
+        } else {
+          failed.status = 'FAILED';
+        }
       }
     }
-  }
 
+    const stepRuns = getStepRunsByRunId(run.runId);
 
-  // check if workflow completed
-  // check step states
-  const stepRuns = getStepRunsByRunId(run.runId);
+    const hasFailed = stepRuns.some(sr => sr.status === 'FAILED');
+    if (hasFailed) {
+      run.status = 'FAILED';
+      run.finishedAt = new Date().toISOString();
+      return runnableSteps.length;
+    }
 
-  // if failed
-  const hasFailed = stepRuns.some(
-    sr => sr.status === 'FAILED'
-  );
+    const allCompleted = stepRuns.every(sr => sr.status === 'COMPLETED');
+    if (allCompleted) {
+      completeWorkflowRun(run.runId);
+    }
 
-  if (hasFailed) {
-    run.status = 'FAILED';
-    run.finishedAt = new Date().toISOString();
     return runnableSteps.length;
-  }
 
-  // check completion
-  const allCompleted = stepRuns.every(
-    sr => sr.status === 'COMPLETED'
-  );
-
-  if (allCompleted) {
-    completeWorkflowRun(run.runId);
+  } finally {
+    // ALWAYS RELEASE LOCK
+    run.isTicking = false;
   }
-  return runnableSteps.length;
 }

@@ -1,5 +1,6 @@
 import { getRunnableSteps } from '../services/scheduler.service.js';
 import { getAllWorkflowRuns } from '../store/workflowRun.store.js';
+import { getStepRunsByRunId } from '../store/stepRun.store.js';
 
 export function getRunnableStepsHandler(req, res) {
   try {
@@ -31,4 +32,22 @@ export function getRunnableStepsHandler(req, res) {
       error: err.message
     });
   }
+};
+
+export function getRunStatus(req, res) {
+  const { runId } = req.params;
+
+  const runs = getAllWorkflowRuns();
+  const run = runs.find(r => r.runId === runId);
+
+  if (!run) {
+    return res.status(404).json({ error: 'Run not found' });
+  }
+
+  const stepRuns = getStepRunsByRunId(runId);
+
+  res.json({
+    run,
+    stepRuns
+  });
 }

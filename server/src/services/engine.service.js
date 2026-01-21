@@ -2,8 +2,9 @@ import { getRunnableSteps } from './scheduler.service.js';
 import { completeStepRun, getStepRunsByRunId, failStepRun } from '../store/stepRun.store.js';
 import { getAllWorkflowRuns, completeWorkflowRun } from '../store/workflowRun.store.js';
 import { getAllWorkflows } from '../store/workflow.store.js';
+import { runContainer } from './dockerExecutor.service.js';
 
-export function tick(runId) {
+export async function tick(runId) {
   const runs = getAllWorkflowRuns();
   const run = runs.find(r => r.runId === runId);
 
@@ -18,32 +19,36 @@ export function tick(runId) {
     stepRun.status = 'RUNNING';
     stepRun.startedAt = new Date().toISOString();
 
-    // simulate success/failure
-    const shouldFail = Math.random() < 0.3;
+    // get step definition
+    const workflows = getAllWorkflows();
+    const workflow = workflows.find(wf => wf.id === run.workflowId);
+    const stepDef = workflow.steps.find(s => s.id === stepRun.stepId);
 
-    if (shouldFail) {
-      // register failure
+    try {
+      await runContainer({
+        image: stepDef.image,
+        command: stepDef.command,
+        timeout: stepDef.timeout
+      });
+
+      // success
+      completeStepRun(run.runId, stepRun.stepId);
+
+    } catch (err) {
+      // failure
       const failed = failStepRun(
         run.runId,
         stepRun.stepId,
-        'Simulated execution error'
+        err.message
       );
 
-      // get retry limit from workflow definition
-      const workflows = getAllWorkflows();
-      const workflow = workflows.find(wf => wf.id === run.workflowId);
-      const stepDef = workflow.steps.find(s => s.id === stepRun.stepId);
-
       if (failed.attempts <= stepDef.retry) {
-        // retry allowed
-        failed.status = 'PENDING';
+        failed.status = 'PENDING'; // retry
+        failed.startedAt = null;
+        failed.finishedAt = null;
       } else {
-        // retry exhausted
-        failed.status = 'FAILED';
+        failed.status = 'FAILED'; // exhausted
       }
-    } else {
-      // success path
-      completeStepRun(run.runId, stepRun.stepId);
     }
   }
 
@@ -71,4 +76,5 @@ export function tick(runId) {
   if (allCompleted) {
     completeWorkflowRun(run.runId);
   }
+  return runnableSteps.length;
 }

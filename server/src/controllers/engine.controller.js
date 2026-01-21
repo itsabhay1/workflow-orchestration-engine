@@ -1,9 +1,9 @@
 import { tick } from "../services/engine.service.js";
 
-export function tickRun(req, res) {
+export async function tickRun(req, res) {
     try{
         const { runId } = req.params;
-        const executedSteps = tick(runId);
+        const executedSteps = Number(await tick(runId));
 
         res.json({
             message: 'Engine tick executed',

@@ -1,5 +1,5 @@
 import { tick } from '../services/engine.service.js';
-import { getAllWorkflowRuns } from '../store/workflowRun.store.js';
+import { getAllWorkflowRuns } from '../repositories/workflowRun.repository.js';
 
 const TICK_INTERVAL_MS = 2000;
 
@@ -8,13 +8,14 @@ export function startEngineWorker() {
 
   setInterval(async () => {
     try {
-      const runs = getAllWorkflowRuns();
+      const runs = await getAllWorkflowRuns();
 
-      for (const run of runs) {
-        if (run.status === 'PENDING') {
-          await tick(run.runId);
-        }
-      }
+      // Run in parallel
+      await Promise.all(
+        runs
+          .filter(r => r.status === 'PENDING' || r.status === 'RUNNING')
+          .map(r => tick(r.runId))
+      );
 
     } catch (err) {
       console.error('Engine worker error:', err.message);

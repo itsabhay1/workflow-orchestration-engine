@@ -1,10 +1,10 @@
-import { saveWorkflow, getAllWorkflows } from '../store/workflow.store.js';
+import { saveWorkflow, getAllWorkflows } from '../repositories/workflow.repository.js';
 import { randomUUID } from 'crypto';
 import { validateWorkflow } from '../validators/workflow.validator.js';
-import { createWorkflowRun } from '../store/workflowRun.store.js';
-import { createStepRun } from '../store/stepRun.store.js';
+import { createWorkflowRun } from '../repositories/workflowRun.repository.js';
+import { createStepRun } from '../repositories/stepRun.repository.js';
 
-export function createWorkflow(req, res) {
+export async function createWorkflow(req, res) {
   try {
     const workflow = req.body;
 
@@ -17,7 +17,7 @@ export function createWorkflow(req, res) {
       createdAt: new Date().toISOString()
     };
 
-    saveWorkflow(workflowWithId);
+    await saveWorkflow(workflowWithId);
 
     res.status(201).json({
       message: 'Workflow created',
@@ -32,38 +32,50 @@ export function createWorkflow(req, res) {
 }
 
 
-export function listWorkflows(req, res) {
-  res.json({
-    workflows: getAllWorkflows()
-  });
+export async function listWorkflows(req, res) {
+  const workflows = await getAllWorkflows();
+  res.json({ workflows });
 }
 
-export function runWorkflow(req, res) {
-  const { id } = req.params;
+export async function runWorkflow(req, res) {
+  try {
+    const { id } = req.params;
 
-  //  Check if workflow exists
-  const workflows = getAllWorkflows();
-  const workflow = workflows.find(wf => wf.id === id);
+    const workflows = await getAllWorkflows();
+    const workflow = workflows.find(wf => wf.id === id);
 
-  if (!workflow) {
-    return res.status(404).json({
-      error: 'Workflow not found'
+    if (!workflow) {
+      return res.status(404).json({ error: 'Workflow not found' });
+    }
+
+    // Create run object
+    const run = {
+      runId: randomUUID(),
+      workflowId: id,
+      status: 'PENDING',
+      startedAt: new Date().toISOString(),
+      finishedAt: null
+    };
+
+    // Save run in DB
+    await createWorkflowRun(run);
+
+    // Create step runs (still memory for now)
+    const stepRuns = await Promise.all(
+      workflow.steps.map(step =>
+        createStepRun(run.runId, step.id)
+      )
+    );
+
+
+    res.status(201).json({
+      message: 'Workflow run created',
+      run,
+      stepRuns
     });
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
-
-  //  Create a workflow run
-  const run = createWorkflowRun(id);
-
-  // Create step runs (one per step)
-  const stepRuns = workflow.steps.map(step =>
-    createStepRun(run.runId, step.id)
-  );
-
-  //  Return run info
-  res.status(201).json({
-    message: 'Workflow run created',
-    run,
-    stepRuns
-  });
 }
 

@@ -1,13 +1,13 @@
 import { getRunnableSteps } from '../services/scheduler.service.js';
-import { getAllWorkflowRuns } from '../store/workflowRun.store.js';
-import { getStepRunsByRunId } from '../store/stepRun.store.js';
+import { getAllWorkflowRuns } from '../repositories/workflowRun.repository.js';
+import { getStepRunsByRunId } from '../repositories/stepRun.repository.js';
 
-export function getRunnableStepsHandler(req, res) {
+export async function getRunnableStepsHandler(req, res) {
   try {
     const { runId } = req.params;
 
     //  Find workflow run
-    const runs = getAllWorkflowRuns();
+    const runs = await getAllWorkflowRuns();
     const run = runs.find(r => r.runId === runId);
 
     if (!run) {
@@ -17,7 +17,7 @@ export function getRunnableStepsHandler(req, res) {
     }
 
     //  Get runnable steps
-    const runnableSteps = getRunnableSteps(
+    const runnableSteps = await getRunnableSteps(
       run.runId,
       run.workflowId
     );
@@ -34,20 +34,26 @@ export function getRunnableStepsHandler(req, res) {
   }
 };
 
-export function getRunStatus(req, res) {
-  const { runId } = req.params;
+export async function getRunStatus(req, res) {
+  try {
+    const { runId } = req.params;
 
-  const runs = getAllWorkflowRuns();
-  const run = runs.find(r => r.runId === runId);
+    const runs = await getAllWorkflowRuns();
+    const run = runs.find(r => r.runId === runId);
 
-  if (!run) {
-    return res.status(404).json({ error: 'Run not found' });
+    if (!run) {
+      return res.status(404).json({ error: 'Run not found' });
+    }
+
+    const stepRuns = await getStepRunsByRunId(runId);
+
+    res.json({
+      run,
+      stepRuns
+    });
+  } catch (err) {
+    res.status(400).json({
+      error: err.message
+    });
   }
-
-  const stepRuns = getStepRunsByRunId(runId);
-
-  res.json({
-    run,
-    stepRuns
-  });
 }

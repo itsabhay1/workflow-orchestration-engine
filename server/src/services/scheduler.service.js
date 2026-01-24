@@ -1,31 +1,37 @@
-import { getStepRunsByRunId } from '../store/stepRun.store.js';
-import { getAllWorkflows } from '../store/workflow.store.js';
+import { getStepRunsByRunId } from '../repositories/stepRun.repository.js';
+import { getAllWorkflows } from '../repositories/workflow.repository.js';
 
  // Finding steps that are ready to execute
-export function getRunnableSteps(runId, workflowId) {
-  const stepRuns = getStepRunsByRunId(runId);
-  const workflows = getAllWorkflows();
+export async function getRunnableSteps(runId, workflowId) {
+  const stepRuns = await getStepRunsByRunId(runId);
+  const workflows = await getAllWorkflows();
   const workflow = workflows.find(wf => wf.id === workflowId);
 
   if (!workflow) {
+    console.log("workflowId:", workflowId);
+    console.log("workflows:", workflows);
     throw new Error('Workflow not found');
   }
+
+  const steps = workflow.steps;
 
   const completedSteps = new Set(
     stepRuns
       .filter(sr => sr.status === 'COMPLETED')
-      .map(sr => sr.stepId)
+      .map(sr => sr.step_id)
   );
 
   return stepRuns.filter(stepRun => {
     if (stepRun.status !== 'PENDING') return false;
 
-    const stepDef = workflow.steps.find(
-      step => step.id === stepRun.stepId
+    const stepDef = steps.find(
+      step => step.id === stepRun.step_id
     );
 
-    return stepDef.depends_on.every(dep =>
-      completedSteps.has(dep)
-    );
+    if(!stepDef) return false;
+
+    const deps = stepDef.depends_on || [];
+
+    return deps.every(dep => completedSteps.has(dep));
   });
 }

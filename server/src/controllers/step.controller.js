@@ -1,14 +1,18 @@
-import { completeStepRun } from '../store/stepRun.store.js';
+import { updateStepRunStatus } from '../repositories/stepRun.repository.js';
 
-export function completeStep(req, res) {
+export async function completeStep(req, res) {
   try {
-    const { runId, stepId } = req.params;
+    const { stepRunId } = req.params;
 
-    const stepRun = completeStepRun(runId, stepId);
+    await updateStepRunStatus(
+      stepRunId,
+      'COMPLETED',
+      new Date().toISOString(),
+      null
+    );
 
     res.json({
-      message: 'Step completed',
-      stepRun
+      message: 'Step marked as COMPLETED'
     });
 
   } catch (err) {

@@ -4,6 +4,7 @@ import runRoutes from './routes/run.route.js';
 import stepRoutes from './routes/step.route.js';
 import engineRoutes from './routes/engine.route.js';
 import { startEngineWorker } from './worker/engine.worker.js';
+import 'dotenv/config';
 
 const app = express();
 const PORT = 3000;

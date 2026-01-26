@@ -63,7 +63,7 @@ export async function runWorkflow(req, res) {
     // Create step runs (still memory for now)
     const stepRuns = await Promise.all(
       workflow.steps.map(step =>
-        createStepRun(run.runId, step.id)
+        createStepRun(run.runId, step)
       )
     );
 

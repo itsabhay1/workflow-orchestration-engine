@@ -1,21 +1,29 @@
 import { pool } from '../db.js';
 import crypto from 'crypto';
 
-export async function createStepRun(runId, stepId) {
+export async function createStepRun(runId, stepOrId) {
   const stepRunId = crypto.randomUUID();
+
+  const isObject = typeof stepOrId === 'object';
+
+  const stepId = isObject ? stepOrId.id : stepOrId;
+  const timeout = isObject ? stepOrId.timeout : null;
+  const maxRetries = isObject ? stepOrId.retry : null;
 
   await pool.query(`
     INSERT INTO step_runs
-    (step_run_id, run_id, step_id, status, attempts)
-    VALUES ($1, $2, $3, 'PENDING', 0)
-  `, [stepRunId, runId, stepId]);
+    (step_run_id, run_id, step_id, status, attempts, timeout, max_retries)
+    VALUES ($1, $2, $3, 'PENDING', 0, $4, $5)
+  `, [stepRunId, runId, stepId, timeout, maxRetries]);
 
   return {
     step_run_id: stepRunId,
     run_id: runId,
     step_id: stepId,
     status: 'PENDING',
-    attempts: 0
+    attempts: 0,
+    timeout,
+    max_retries: maxRetries
   };
 }
 

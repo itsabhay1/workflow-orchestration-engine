@@ -1,5 +1,5 @@
 import { getRunnableSteps } from './scheduler.service.js';
-import { getStepRunsByRunId, updateStepRunStatus } from '../repositories/stepRun.repository.js';
+import { getStepRunsByRunId, updateStepRunStatus, tryMarkStepRunning } from '../repositories/stepRun.repository.js';
 import { getAllWorkflowRuns, completeWorkflowRun, updateWorkflowRunStatus } from '../repositories/workflowRun.repository.js';
 import { getAllWorkflows } from '../repositories/workflow.repository.js';
 import { runContainer } from './dockerExecutor.service.js';
@@ -20,7 +20,15 @@ export async function tick(runId) {
     const stepDef = workflow.steps.find(s => s.id === stepRun.step_id);
     if (!stepDef) continue;
 
-    await updateStepRunStatus(stepRun.step_run_id, 'RUNNING');
+    // atomic Lock
+    const locked = await tryMarkStepRunning(stepRun.step_run_id);
+
+    if(!locked) {
+      console.log(`⏭ Step ${stepRun.step_id} already taken by another engine`);
+      continue;
+    }
+
+    console.log(`Executing step ${stepRun.step_id}`);
 
     try {
       await runContainer({

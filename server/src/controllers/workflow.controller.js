@@ -40,6 +40,14 @@ export async function listWorkflows(req, res) {
 export async function runWorkflow(req, res) {
   try {
     const { id } = req.params;
+    
+    // Require Idempotency Key
+    const requestId = req.headers['idempotency-key'];
+    if (!requestId) {
+      return res.status(400).json({
+        error: 'Idempotency-Key header is required'
+      });
+    }
 
     const workflows = await getAllWorkflows();
     const workflow = workflows.find(wf => wf.id === id);
@@ -57,20 +65,24 @@ export async function runWorkflow(req, res) {
       finishedAt: null
     };
 
-    // Save run in DB
-    await createWorkflowRun(run);
+    // Repo handles idempotency
+    const savedRun = await createWorkflowRun(run, requestId);
 
-    // Create step runs (still memory for now)
-    const stepRuns = await Promise.all(
-      workflow.steps.map(step =>
-        createStepRun(run.runId, step)
-      )
-    );
+    let stepRuns = [];
+
+    // Only create steps if this is a NEW run
+    if (savedRun.runId === run.runId) {
+      stepRuns = await Promise.all(
+        workflow.steps.map(step =>
+          createStepRun(run.runId, step)
+        )
+      );
+    }
 
 
     res.status(201).json({
       message: 'Workflow run created',
-      run,
+      run: savedRun,
       stepRuns
     });
 

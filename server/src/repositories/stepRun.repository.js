@@ -37,22 +37,26 @@ export async function getStepRunsByRunId(runId) {
 
 export async function updateStepRunStatus(stepRunId, status, error = null) {
   if (status === 'RUNNING') {
-    await pool.query(`
-      UPDATE step_runs
-      SET status=$1,
-          started_at=$2,
-          attempts = attempts + 1
-      WHERE step_run_id=$3
-    `, [status, new Date().toISOString(), stepRunId]);
-
-  } else {
-    await pool.query(`
-      UPDATE step_runs
-      SET status=$1,
-          error=$2,
-          finished_at=$3
-      WHERE step_run_id=$4
-    `, [status, error, new Date().toISOString(), stepRunId]);
+    throw new Error('DoaB violation: Use tryMarkStepRunning() to start execution');
   }
+
+  await pool.query(`
+    UPDATE step_runs
+    SET status=$1,
+        error=$2,
+        finished_at=$3
+    WHERE step_run_id=$4
+  `, [status, error, new Date().toISOString(), stepRunId]);
 }
 
+export async function tryMarkStepRunning(stepRunId) {
+  const { rowCount } = await pool.query(`
+    UPDATE step_runs
+    SET status='RUNNING',
+        started_at=NOW(),
+        attempts = attempts + 1
+    WHERE step_run_id=$1 AND status='PENDING'
+  `, [stepRunId]);
+
+  return rowCount === 1; // true = lock acquired
+}

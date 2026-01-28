@@ -60,3 +60,21 @@ export async function tryMarkStepRunning(stepRunId) {
 
   return rowCount === 1; // true = lock acquired
 }
+
+export async function completeStepRun(
+  stepRunId,
+  status,
+  logs = '',
+  exitCode = null,
+  error = null
+) {
+  await pool.query(`
+    UPDATE step_runs
+    SET status=$1,
+        logs=$2,
+        exit_code=$3,
+        error=$4,
+        finished_at=NOW()
+    WHERE step_run_id=$5
+  `, [status, logs, exitCode, error, stepRunId]);
+}

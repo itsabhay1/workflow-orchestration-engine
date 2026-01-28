@@ -1,5 +1,5 @@
 import { getRunnableSteps } from './scheduler.service.js';
-import { getStepRunsByRunId, updateStepRunStatus, tryMarkStepRunning } from '../repositories/stepRun.repository.js';
+import { getStepRunsByRunId, updateStepRunStatus, tryMarkStepRunning, completeStepRun } from '../repositories/stepRun.repository.js';
 import { getAllWorkflowRuns, completeWorkflowRun, updateWorkflowRunStatus } from '../repositories/workflowRun.repository.js';
 import { getAllWorkflows } from '../repositories/workflow.repository.js';
 import { runContainer } from './dockerExecutor.service.js';
@@ -31,14 +31,14 @@ export async function tick(runId) {
     console.log(`Executing step ${stepRun.step_id}`);
 
     try {
-      await runContainer({
+      const result = await runContainer({
         image: stepDef.image,
         command: stepDef.command,
         timeout: stepDef.timeout
       });
 
       // success
-      await updateStepRunStatus(stepRun.step_run_id, 'COMPLETED');
+      await completeStepRun(stepRun.step_run_id, 'COMPLETED', result.logs, result.exitCode);
 
     } catch (err) {
       // get fresh attempts count
@@ -50,7 +50,13 @@ export async function tick(runId) {
         await updateStepRunStatus(stepRun.step_run_id, 'PENDING', err.message);
       } else {
         // no retries left
-        await updateStepRunStatus(stepRun.step_run_id, 'FAILED', err.message);
+        await completeStepRun(
+          stepRun.step_run_id,
+          'FAILED',
+          err.logs || '',
+          err.exitCode || 1,
+          err.message
+        );
       }
     }
   }

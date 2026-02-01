@@ -3,8 +3,16 @@ import { getStepRunsByRunId, updateStepRunStatus, tryMarkStepRunning, completeSt
 import { getAllWorkflowRuns, completeWorkflowRun, updateWorkflowRunStatus } from '../repositories/workflowRun.repository.js';
 import { getAllWorkflows } from '../repositories/workflow.repository.js';
 import { runContainer } from './dockerExecutor.service.js';
+import { isShuttingDown } from '../utils/shutdown.utils.js';
+
 
 export async function tick(runId) {
+
+  if (isShuttingDown()) {
+    console.log('⚠ Engine paused due to shutdown');
+    return 0;
+  }
+
   const runs = await getAllWorkflowRuns();
   const run = runs.find(r => r.runId === runId);
 
@@ -23,7 +31,7 @@ export async function tick(runId) {
     // atomic Lock
     const locked = await tryMarkStepRunning(stepRun.step_run_id);
 
-    if(!locked) {
+    if (!locked) {
       console.log(`⏭ Step ${stepRun.step_id} already taken by another engine`);
       continue;
     }
@@ -32,6 +40,7 @@ export async function tick(runId) {
 
     try {
       const result = await runContainer({
+        stepRunId: stepRun.step_run_id,
         image: stepDef.image,
         command: stepDef.command,
         timeout: stepDef.timeout
@@ -41,6 +50,14 @@ export async function tick(runId) {
       await completeStepRun(stepRun.step_run_id, 'COMPLETED', result.logs, result.exitCode);
 
     } catch (err) {
+
+      // interrupted by shutdown
+      if (err.interrupted) {
+        console.log(`Step ${stepRun.step_id} interrupted due to shutdown`);
+        await updateStepRunStatus(stepRun.step_run_id, 'PENDING', 'Interrupted by shutdown');
+        continue;
+      }
+      
       // get fresh attempts count
       const stepRuns = await getStepRunsByRunId(run.runId);
       const current = stepRuns.find(sr => sr.step_run_id === stepRun.step_run_id);

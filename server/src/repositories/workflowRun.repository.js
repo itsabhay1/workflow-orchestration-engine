@@ -80,3 +80,12 @@ export async function completeWorkflowRun(runId) {
     [new Date().toISOString(), runId]
   );
 }
+
+export async function markRunAsRunning(runId) {
+  await pool.query(`
+    UPDATE workflow_runs
+    SET status = 'RUNNING',
+        started_at = COALESCE(started_at, NOW())
+    WHERE run_id = $1 AND status = 'PENDING'
+  `, [runId]);
+}

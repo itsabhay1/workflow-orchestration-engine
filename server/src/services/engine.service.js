@@ -1,9 +1,10 @@
 import { getRunnableSteps } from './scheduler.service.js';
 import { getStepRunsByRunId, updateStepRunStatus, tryMarkStepRunning, completeStepRun } from '../repositories/stepRun.repository.js';
-import { getAllWorkflowRuns, completeWorkflowRun, updateWorkflowRunStatus } from '../repositories/workflowRun.repository.js';
+import { getAllWorkflowRuns, completeWorkflowRun, updateWorkflowRunStatus, markRunAsRunning } from '../repositories/workflowRun.repository.js';
 import { getAllWorkflows } from '../repositories/workflow.repository.js';
 import { runContainer } from './dockerExecutor.service.js';
 import { isShuttingDown } from '../utils/shutdown.utils.js';
+import { pool } from '../db.js';
 
 
 export async function tick(runId) {
@@ -17,6 +18,13 @@ export async function tick(runId) {
   const run = runs.find(r => r.runId === runId);
 
   if (!run) throw new Error('Workflow run not found');
+
+  await pool.query(       // Heartbeat - engine 
+    `UPDATE workflow_runs 
+   SET last_heartbeat = NOW() 
+   WHERE run_id = $1`,
+    [runId]
+  );
 
   const workflows = await getAllWorkflows();
   const workflow = workflows.find(wf => wf.id === run.workflowId);
@@ -35,6 +43,8 @@ export async function tick(runId) {
       console.log(`⏭ Step ${stepRun.step_id} already taken by another engine`);
       continue;
     }
+    
+    await markRunAsRunning(run.runId);
 
     console.log(`Executing step ${stepRun.step_id}`);
 
@@ -57,7 +67,7 @@ export async function tick(runId) {
         await updateStepRunStatus(stepRun.step_run_id, 'PENDING', 'Interrupted by shutdown');
         continue;
       }
-      
+
       // get fresh attempts count
       const stepRuns = await getStepRunsByRunId(run.runId);
       const current = stepRuns.find(sr => sr.step_run_id === stepRun.step_run_id);

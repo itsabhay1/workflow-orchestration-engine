@@ -1,5 +1,6 @@
 import { tick } from '../services/engine.service.js';
 import { getAllWorkflowRuns } from '../repositories/workflowRun.repository.js';
+import { detectZombieRuns } from '../services/zombieDetector.service.js';
 
 const TICK_INTERVAL_MS = 2000;
 
@@ -8,6 +9,9 @@ export function startEngineWorker() {
 
   setInterval(async () => {
     try {
+
+      await detectZombieRuns();    // detect zombies
+
       const runs = await getAllWorkflowRuns();
 
       // Run in parallel

@@ -2,11 +2,18 @@ import { getRunnableSteps } from './scheduler.service.js';
 import { getStepRunsByRunId, updateStepRunStatus, tryMarkStepRunning, completeStepRun } from '../repositories/stepRun.repository.js';
 import { getAllWorkflowRuns, completeWorkflowRun, updateWorkflowRunStatus, markRunAsRunning } from '../repositories/workflowRun.repository.js';
 import { getAllWorkflows } from '../repositories/workflow.repository.js';
-import { runContainer } from './dockerExecutor.service.js';
 import { isShuttingDown } from '../utils/shutdown.utils.js';
 import { pool } from '../db.js';
 
-
+/* MCP call */
+async function callMCPExecute(payload) {
+  const res = await fetch('http://localhost:4000/execute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return res.json();
+}
 export async function tick(runId) {
 
   if (isShuttingDown()) {
@@ -49,16 +56,38 @@ export async function tick(runId) {
     console.log(`Executing step ${stepRun.step_id}`);
 
     try {
-      const result = await runContainer({
+      const result = await callMCPExecute({
         stepRunId: stepRun.step_run_id,
         image: stepDef.image,
         command: stepDef.command,
         timeout: stepDef.timeout,
-        resources: stepDef.resources
+        resources: stepDef.resources,
+        tenantId: run.workflowId
       });
 
-      // success
-      await completeStepRun(stepRun.step_run_id, 'COMPLETED', result.logs, result.exitCode);
+      if (result.status === 'COMPLETED') {
+        await completeStepRun(
+          stepRun.step_run_id,
+          'COMPLETED',
+          result.logs,
+          result.exitCode
+        );
+        continue;
+      }
+
+      // MCP failure handling
+      if (result.oom) {
+        await completeStepRun(
+          stepRun.step_run_id,
+          'FAILED',
+          result.logs || '',
+          137,
+          'Out of memory'
+        );
+        continue;
+      }
+
+      throw result;
 
     } catch (err) {
 

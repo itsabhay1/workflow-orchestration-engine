@@ -43,7 +43,7 @@ export async function tick(runId) {
       console.log(`⏭ Step ${stepRun.step_id} already taken by another engine`);
       continue;
     }
-    
+
     await markRunAsRunning(run.runId);
 
     console.log(`Executing step ${stepRun.step_id}`);
@@ -53,7 +53,8 @@ export async function tick(runId) {
         stepRunId: stepRun.step_run_id,
         image: stepDef.image,
         command: stepDef.command,
-        timeout: stepDef.timeout
+        timeout: stepDef.timeout,
+        resources: stepDef.resources
       });
 
       // success
@@ -65,6 +66,18 @@ export async function tick(runId) {
       if (err.interrupted) {
         console.log(`Step ${stepRun.step_id} interrupted due to shutdown`);
         await updateStepRunStatus(stepRun.step_run_id, 'PENDING', 'Interrupted by shutdown');
+        continue;
+      }
+
+      // OOM detect- docker memory limit hit
+      if (err.oom) {
+        await completeStepRun(
+          stepRun.step_run_id,
+          'FAILED',
+          err.logs || '',
+          137,
+          'Out of memory'
+        );
         continue;
       }
 

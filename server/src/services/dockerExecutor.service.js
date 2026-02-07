@@ -1,6 +1,5 @@
 import { spawn } from 'child_process';
 import { isShuttingDown } from '../utils/shutdown.utils.js';
-import { exitCode } from 'process';
 
 const runningContainers = new Map(); // stepRunId → child process
 
@@ -26,15 +25,6 @@ export async function stopAllContainers() {
     });
 
     proc.kill('SIGTERM');   // graceful stop
-
-    // Force kill if still alive after 5s
-    setTimeout(() => {
-      if (!proc.killed) {
-        console.log(`Force killing container for stepRun ${stepRunId}`);
-        proc.kill('SIGKILL');
-      }
-    }, 5000);
-
     stops.push(p);
   }
   await Promise.all(stops);
@@ -43,11 +33,25 @@ export async function stopAllContainers() {
 
 
 // Runs a Docker container for a workflow step
-export function runContainer({ stepRunId, image, command, timeout }) {
+export function runContainer({ stepRunId, image, command, timeout, resources = {} }) {
   return new Promise((resolve, reject) => {
+    const {
+      cpu = 0.5,        // half core
+      memory = '256m',  // memory limit
+      pids = 64         // fork protection
+    } = resources;
     const docker = spawn(
       'docker',
-      ['run', '--rm', image, ...command]
+      [
+        'run',
+        '--rm',
+        '--cpus', String(cpu),
+        '--memory', memory,
+        '--pids-limit', String(pids),
+        '--network', 'none', // security isolation
+        image,
+        ...command
+      ]
     );
 
     // register process
@@ -64,7 +68,7 @@ export function runContainer({ stepRunId, image, command, timeout }) {
     docker.stderr.on('data', data => {
       logs += data.toString();
     });
-    
+
     const timer = setTimeout(() => {
       console.log(`Timeout for stepRun ${stepRunId}`);
       docker.kill('SIGKILL');
@@ -74,19 +78,28 @@ export function runContainer({ stepRunId, image, command, timeout }) {
         logs,
         exitCode: 124
       });
-    }, (timeout+2) * 1000);    // grace window
+    }, (timeout + 2) * 1000);    // grace window
 
-    docker.on('exit',(code, signal) => {
+    docker.on('exit', (code, signal) => {
       clearTimeout(timer);
       runningContainers.delete(stepRunId);
 
-      if(isShuttingDown() && signal === 'SIGTERM'){               // shutdown case
+      if (isShuttingDown() && signal === 'SIGTERM') {               // shutdown case
         return reject({
           message: 'Execution interrupted due to engine shutdown',
           logs,
           exitCode: null,
           interrupted: true
         })
+      }
+      
+      if (code === 137) {
+        return reject({
+          message: 'Killed due to memory limit (OOM)',
+          logs,
+          exitCode: 137,
+          oom: true
+        });
       }
 
       if (code === 0) {
@@ -109,7 +122,7 @@ export function runContainer({ stepRunId, image, command, timeout }) {
       reject({
         message: err.message,
         logs,
-        exitCode: 1 
+        exitCode: 1
       });
     });
   });

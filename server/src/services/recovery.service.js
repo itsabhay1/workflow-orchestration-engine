@@ -20,7 +20,7 @@ export async function recoverStuckSteps() {
     if (runtime > sr.timeout + MAX_RUNTIME_BUFFER) {
       console.log(`⚠ Recovering stuck step ${sr.step_run_id}`);
 
-      if (sr.attempts < sr.max_retries) {
+      if (sr.attempts <= sr.max_retries) {
         await pool.query(
           `UPDATE step_runs
            SET status='PENDING',

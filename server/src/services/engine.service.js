@@ -129,8 +129,8 @@ export async function tick(runId, workerId) {
         const stepRuns = await getStepRunsByRunId(run.runId);
         const current = stepRuns.find(sr => sr.step_run_id === stepRun.step_run_id);
 
-        if (current.attempts < stepDef.retry) {
-          // retry allowed → go back to queue
+        if (current.attempts <= stepDef.retry) {
+          // retry is the number of retries after the first attempt.
           await updateStepRunStatus(stepRun.step_run_id, 'PENDING', err.message);
         } else {
           // no retries left

@@ -18,7 +18,9 @@ export async function detectZombieRuns() {
     // Revive run
     await pool.query(
       `UPDATE workflow_runs
-       SET status='PENDING'
+       SET status='PENDING',
+           lease_owner=NULL,
+           lease_expires_at=NULL
        WHERE run_id=$1`,
       [run.run_id]
     );

@@ -1,5 +1,7 @@
 import { pool } from '../db.js';
 
+const LEASE_DURATION_SEC = 30;
+
 export async function createWorkflowRun(run, requestId = null) {
   // If idempotency key is provided, check first
   if(requestId) {
@@ -52,11 +54,26 @@ export async function getWorkflowRunById(runId) {
   };
 }
 
-export async function updateWorkflowRunStatus(runId, status, finishedAt=null) {
-  await pool.query(
-    `UPDATE workflow_runs SET status=$1, finished_at=$2 WHERE run_id=$3`,
-    [status, finishedAt, runId]
-  );
+export async function updateWorkflowRunStatus(runId, status, finishedAt=null, workerId = null) {
+  const isTerminal = status === 'COMPLETED' || status === 'FAILED';
+
+  const params = [status, finishedAt, runId, isTerminal];
+  let query = `
+    UPDATE workflow_runs
+    SET status=$1,
+        finished_at=$2,
+        lease_owner = CASE WHEN $4 THEN NULL ELSE lease_owner END,
+        lease_expires_at = CASE WHEN $4 THEN NULL ELSE lease_expires_at END
+    WHERE run_id=$3
+  `;
+
+  if (workerId) {
+    params.push(workerId);
+    query += ` AND lease_owner = $5`;
+  }
+
+  const { rowCount } = await pool.query(query, params);
+  return rowCount === 1;
 }
 
 export async function getAllWorkflowRuns() {
@@ -72,13 +89,24 @@ export async function getAllWorkflowRuns() {
 }
 
 
-export async function completeWorkflowRun(runId) {
-  await pool.query(
-    `UPDATE workflow_runs
-     SET status='COMPLETED', finished_at=$1
-     WHERE run_id=$2`,
-    [new Date().toISOString(), runId]
-  );
+export async function completeWorkflowRun(runId, workerId = null) {
+  const params = [new Date().toISOString(), runId];
+  let query = `
+    UPDATE workflow_runs
+    SET status='COMPLETED',
+        finished_at=$1,
+        lease_owner=NULL,
+        lease_expires_at=NULL
+    WHERE run_id=$2
+  `;
+
+  if (workerId) {
+    params.push(workerId);
+    query += ` AND lease_owner = $3`;
+  }
+
+  const { rowCount } = await pool.query(query, params);
+  return rowCount === 1;
 }
 
 export async function markRunAsRunning(runId) {
@@ -88,4 +116,46 @@ export async function markRunAsRunning(runId) {
         started_at = COALESCE(started_at, NOW())
     WHERE run_id = $1 AND status = 'PENDING'
   `, [runId]);
+}
+
+export async function tryAcquireRunLease(runId, workerId) {
+  const { rowCount } = await pool.query(`
+    UPDATE workflow_runs
+    SET lease_owner = $2,
+        lease_expires_at = NOW() + INTERVAL '${LEASE_DURATION_SEC} seconds',
+        last_heartbeat = NOW()
+    WHERE run_id = $1
+      AND status IN ('PENDING', 'RUNNING')
+      AND (
+        lease_owner IS NULL
+        OR lease_expires_at IS NULL
+        OR lease_expires_at <= NOW()
+        OR lease_owner = $2
+      )
+  `, [runId, workerId]);
+
+  return rowCount === 1;
+}
+
+export async function renewRunLease(runId, workerId) {
+  const { rowCount } = await pool.query(`
+    UPDATE workflow_runs
+    SET lease_expires_at = NOW() + INTERVAL '${LEASE_DURATION_SEC} seconds',
+        last_heartbeat = NOW()
+    WHERE run_id = $1
+      AND lease_owner = $2
+      AND status IN ('PENDING', 'RUNNING')
+  `, [runId, workerId]);
+
+  return rowCount === 1;
+}
+
+export async function releaseRunLease(runId, workerId) {
+  await pool.query(`
+    UPDATE workflow_runs
+    SET lease_owner = NULL,
+        lease_expires_at = NULL
+    WHERE run_id = $1
+      AND lease_owner = $2
+  `, [runId, workerId]);
 }

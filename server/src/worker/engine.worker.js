@@ -1,11 +1,13 @@
+import { randomUUID } from 'crypto';
 import { tick } from '../services/engine.service.js';
-import { getAllWorkflowRuns } from '../repositories/workflowRun.repository.js';
+import { getAllWorkflowRuns, tryAcquireRunLease } from '../repositories/workflowRun.repository.js';
 import { detectZombieRuns } from '../services/zombieDetector.service.js';
 
 const TICK_INTERVAL_MS = 2000;
+const workerId = randomUUID();
 
 export function startEngineWorker() {
-  console.log('Engine worker started');
+  console.log(`Engine worker started: ${workerId}`);
 
   runEngineLoop();
 }
@@ -21,7 +23,12 @@ async function runEngineLoop() {
       await Promise.all(
         runs
           .filter(r => r.status === 'PENDING' || r.status === 'RUNNING')
-          .map(r => tick(r.runId))
+          .map(async r => {
+            const leased = await tryAcquireRunLease(r.runId, workerId);
+            if (!leased) return 0;
+
+            return tick(r.runId, workerId);
+          })
       );
     } catch (err) {
       console.error('Engine worker error:', err.message);

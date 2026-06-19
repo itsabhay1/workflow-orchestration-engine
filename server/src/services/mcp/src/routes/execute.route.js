@@ -13,7 +13,20 @@ router.post('/', async (req, res) => {
         tenantId
     } = req.body;
 
+    console.log('[MCP_DEBUG] Incoming /execute request', {
+        stepRunId,
+        image,
+        command,
+        timeout
+    });
+
     if (!stepRunId || !image || !command) {
+        console.log('[MCP_DEBUG] Invalid /execute payload', {
+            stepRunId,
+            image,
+            command,
+            timeout
+        });
         return res.status(400).json({ error: 'Invalid payload' });
     }
 
@@ -27,12 +40,22 @@ router.post('/', async (req, res) => {
             tenantId
         });
 
+        console.log('[MCP_DEBUG] /execute completed', {
+            stepRunId,
+            exitCode: result.exitCode
+        });
+
         res.json({
             status: 'COMPLETED',
             ...result
         });
 
     } catch (err) {
+        console.log('[MCP_DEBUG] /execute failed', {
+            stepRunId,
+            exitCode: err.exitCode,
+            error: err.message
+        });
         res.json({
             status: 'FAILED',
             exitCode: err.exitCode,

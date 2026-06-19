@@ -40,6 +40,14 @@ export function runContainer({ stepRunId, image, command, timeout, resources = {
       memory = '256m',  // memory limit
       pids = 64         // fork protection
     } = resources;
+
+    console.log('[MCP_DEBUG] Docker start', {
+      stepRunId,
+      image,
+      command,
+      timeout
+    });
+
     const docker = spawn(
       'docker',
       [
@@ -71,6 +79,9 @@ export function runContainer({ stepRunId, image, command, timeout, resources = {
 
     const timer = setTimeout(() => {
       console.log(`Timeout for stepRun ${stepRunId}`);
+      console.log('[MCP_DEBUG] Docker timeout', {
+        stepRunId
+      });
       docker.kill('SIGKILL');
       runningContainers.delete(stepRunId);
       reject({
@@ -83,6 +94,12 @@ export function runContainer({ stepRunId, image, command, timeout, resources = {
     docker.on('exit', (code, signal) => {
       clearTimeout(timer);
       runningContainers.delete(stepRunId);
+
+      console.log('[MCP_DEBUG] Docker completion', {
+        stepRunId,
+        exitCode: code,
+        signal
+      });
 
       if (isShuttingDown() && signal === 'SIGTERM') {               // shutdown case
         return reject({
@@ -119,6 +136,10 @@ export function runContainer({ stepRunId, image, command, timeout, resources = {
     docker.on('error', err => {
       clearTimeout(timer);
       runningContainers.delete(stepRunId);
+      console.log('[MCP_DEBUG] Docker error', {
+        stepRunId,
+        error: err.message
+      });
       reject({
         message: err.message,
         logs,
